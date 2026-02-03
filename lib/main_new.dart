@@ -1,11 +1,22 @@
 import 'package:companyproject/view/home_view.dart';
+import 'package:companyproject/services/mongodb_service.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'viewmodel/room_viewmodel.dart';
 
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  
+  // Initialize MongoDB service
+  try {
+    await MongoDBService.instance.initialize();
+  } catch (e) {
+    print('Failed to initialize MongoDB: $e');
+    // Continue with app even if MongoDB fails
+  }
+  
   runApp(const MyApp());
 }
 

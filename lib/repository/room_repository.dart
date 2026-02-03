@@ -1,251 +1,289 @@
-
-
 import 'package:companyproject/model/room_filter_model.dart';
 import 'package:companyproject/model/room_model.dart';
 import 'package:companyproject/model/student_requirenment_model.dart';
+import 'package:companyproject/services/mongodb_service.dart';
+import 'package:uuid/uuid.dart';
 
 class RoomRepository {
-  // Mock database - in-memory storage
-  final List<Room> _rooms = [];
-  int _idCounter = 1;
+  final MongoDBService _mongoDBService = MongoDBService.instance;
+  bool _isInitialized = false;
 
   RoomRepository() {
-    _initializeMockData();
+    _initialize();
   }
 
-  void _initializeMockData() {
-    // Add some initial rooms for demonstration
-    _rooms.addAll([
+  Future<void> _initialize() async {
+    try {
+      await _mongoDBService.initialize();
+      _isInitialized = true;
+      
+      // Add some sample data if database is empty
+      final rooms = _mongoDBService.getAllRooms();
+      if (rooms.isEmpty) {
+        await _addSampleData();
+      }
+    } catch (e) {
+      print('Failed to initialize RoomRepository: $e');
+    }
+  }
+
+  Future<void> _addSampleData() async {
+    final sampleRooms = [
       Room(
-        id: '${_idCounter++}',
+        id: const Uuid().v4(),
         roomNumber: '101',
         capacity: 2,
         hasAC: true,
         hasAttachedWashroom: true,
       ),
       Room(
-        id: '${_idCounter++}',
+        id: const Uuid().v4(),
         roomNumber: '102',
         capacity: 3,
         hasAC: false,
         hasAttachedWashroom: true,
       ),
       Room(
-        id: '${_idCounter++}',
+        id: const Uuid().v4(),
         roomNumber: '103',
         capacity: 1,
         hasAC: true,
         hasAttachedWashroom: false,
       ),
       Room(
-        id: '${_idCounter++}',
+        id: const Uuid().v4(),
         roomNumber: '201',
         capacity: 4,
         hasAC: true,
         hasAttachedWashroom: true,
       ),
       Room(
-        id: '${_idCounter++}',
+        id: const Uuid().v4(),
         roomNumber: '202',
         capacity: 2,
         hasAC: false,
         hasAttachedWashroom: false,
       ),
-    ]);
+    ];
+
+    for (final room in sampleRooms) {
+      await _mongoDBService.addRoom(room);
+    }
   }
 
-  // Simulate async operations with Future.delayed
   Future<List<Room>> getAllRooms() async {
-    await Future.delayed(const Duration(milliseconds: 500));
-    return List.from(_rooms);
+    if (!_isInitialized) {
+      await _initialize();
+    }
+    
+    try {
+      return _mongoDBService.getAllRooms();
+    } catch (e) {
+      throw Exception('Failed to fetch rooms: $e');
+    }
   }
 
   Future<Room> addRoom(Room room) async {
-    await Future.delayed(const Duration(milliseconds: 300));
-
-    // Check if room number already exists
-    if (_rooms.any((r) => r.roomNumber == room.roomNumber)) {
-      throw Exception('Room number ${room.roomNumber} already exists');
+    if (!_isInitialized) {
+      await _initialize();
     }
 
-    final newRoom = room.copyWith(id: '${_idCounter++}');
-    _rooms.add(newRoom);
-    return newRoom;
+    try {
+      // Check if room number already exists
+      final existingRooms = _mongoDBService.getAllRooms();
+      if (existingRooms.any((r) => r.roomNumber == room.roomNumber)) {
+        throw Exception('Room number ${room.roomNumber} already exists');
+      }
+
+      // Generate ID if empty
+      final roomToAdd = room.id.isEmpty 
+          ? room.copyWith(id: const Uuid().v4())
+          : room;
+
+      final success = await _mongoDBService.addRoom(roomToAdd);
+      if (!success) {
+        throw Exception('Failed to add room');
+      }
+
+      return roomToAdd;
+    } catch (e) {
+      throw Exception('Failed to add room: $e');
+    }
   }
 
   Future<Room?> getRoomById(String id) async {
-    await Future.delayed(const Duration(milliseconds: 200));
+    if (!_isInitialized) {
+      await _initialize();
+    }
+
     try {
-      return _rooms.firstWhere((room) => room.id == id);
+      final rooms = _mongoDBService.getAllRooms();
+      try {
+        return rooms.firstWhere((room) => room.id == id);
+      } catch (e) {
+        return null;
+      }
     } catch (e) {
-      return null;
+      throw Exception('Failed to get room by ID: $e');
     }
   }
 
   Future<Room?> getRoomByNumber(String roomNumber) async {
-    await Future.delayed(const Duration(milliseconds: 200));
+    if (!_isInitialized) {
+      await _initialize();
+    }
+
     try {
-      return _rooms.firstWhere((room) => room.roomNumber == roomNumber);
+      final rooms = _mongoDBService.getAllRooms();
+      try {
+        return rooms.firstWhere((room) => room.roomNumber == roomNumber);
+      } catch (e) {
+        return null;
+      }
     } catch (e) {
-      return null;
+      throw Exception('Failed to get room by number: $e');
     }
   }
 
   Future<List<Room>> searchRooms(RoomFilter filter) async {
-    await Future.delayed(const Duration(milliseconds: 400));
-
-    List<Room> filteredRooms = List.from(_rooms);
-
-    if (filter.minCapacity != null) {
-      filteredRooms = filteredRooms
-          .where((room) => room.capacity >= filter.minCapacity!)
-          .toList();
+    if (!_isInitialized) {
+      await _initialize();
     }
 
-    if (filter.requiresAC != null && filter.requiresAC!) {
-      filteredRooms =
-          filteredRooms.where((room) => room.hasAC == true).toList();
+    try {
+      return _mongoDBService.searchRooms(
+        capacity: filter.minCapacity,
+        hasAC: filter.requiresAC,
+        hasAttachedWashroom: filter.requiresAttachedWashroom,
+        isAvailable: filter.showOnlyAvailable,
+      );
+    } catch (e) {
+      throw Exception('Failed to search rooms: $e');
     }
-
-    if (filter.requiresAttachedWashroom != null &&
-        filter.requiresAttachedWashroom!) {
-      filteredRooms = filteredRooms
-          .where((room) => room.hasAttachedWashroom == true)
-          .toList();
-    }
-
-    if (filter.showOnlyAvailable != null && filter.showOnlyAvailable!) {
-      filteredRooms =
-          filteredRooms.where((room) => !room.isAllocated).toList();
-    }
-
-    return filteredRooms;
   }
 
   Future<Room?> findBestMatch(StudentRequirement requirement) async {
-    await Future.delayed(const Duration(milliseconds: 500));
-
-    // Get all available rooms
-    List<Room> availableRooms =
-    _rooms.where((room) => !room.isAllocated).toList();
-
-    if (availableRooms.isEmpty) {
-      return null;
+    if (!_isInitialized) {
+      await _initialize();
     }
 
-    // Filter by requirements
-    List<Room> matchingRooms = availableRooms.where((room) {
-      bool capacityMatch = room.capacity >= requirement.requiredCapacity;
-      bool acMatch = !requirement.needsAC || room.hasAC;
-      bool washroomMatch =
-          !requirement.needsAttachedWashroom || room.hasAttachedWashroom;
+    try {
+      final availableRooms = _mongoDBService.searchRooms(
+        capacity: requirement.requiredCapacity,
+        hasAC: requirement.needsAC,
+        hasAttachedWashroom: requirement.needsAttachedWashroom,
+        isAvailable: true,
+      );
 
-      return capacityMatch && acMatch && washroomMatch;
-    }).toList();
+      if (availableRooms.isEmpty) {
+        return null;
+      }
 
-    if (matchingRooms.isEmpty) {
-      return null;
+      // Sort by best match (smallest capacity that fits, then by amenities)
+      availableRooms.sort((a, b) {
+        // First priority: exact capacity match
+        if (a.capacity == requirement.requiredCapacity &&
+            b.capacity != requirement.requiredCapacity) {
+          return -1;
+        }
+        if (b.capacity == requirement.requiredCapacity &&
+            a.capacity != requirement.requiredCapacity) {
+          return 1;
+        }
+
+        // Second priority: smaller capacity (minimize waste)
+        int capacityCompare = a.capacity.compareTo(b.capacity);
+        if (capacityCompare != 0) return capacityCompare;
+
+        // Third priority: amenities (prefer rooms with more amenities)
+        int aScore = (a.hasAC ? 1 : 0) + (a.hasAttachedWashroom ? 1 : 0);
+        int bScore = (b.hasAC ? 1 : 0) + (b.hasAttachedWashroom ? 1 : 0);
+        return bScore.compareTo(aScore);
+      });
+
+      return availableRooms.first;
+    } catch (e) {
+      throw Exception('Failed to find best match: $e');
     }
-
-    // Sort by best match (smallest capacity that fits, then by amenities)
-    matchingRooms.sort((a, b) {
-      // First priority: exact capacity match
-      if (a.capacity == requirement.requiredCapacity &&
-          b.capacity != requirement.requiredCapacity) {
-        return -1;
-      }
-      if (b.capacity == requirement.requiredCapacity &&
-          a.capacity != requirement.requiredCapacity) {
-        return 1;
-      }
-
-      // Second priority: smaller capacity (minimize waste)
-      int capacityCompare = a.capacity.compareTo(b.capacity);
-      if (capacityCompare != 0) return capacityCompare;
-
-      // Third priority: amenities (prefer rooms with more amenities)
-      int aScore = (a.hasAC ? 1 : 0) + (a.hasAttachedWashroom ? 1 : 0);
-      int bScore = (b.hasAC ? 1 : 0) + (b.hasAttachedWashroom ? 1 : 0);
-      return bScore.compareTo(aScore);
-    });
-
-    return matchingRooms.first;
   }
 
   Future<Room> allocateRoom(String roomId, String studentName) async {
-    await Future.delayed(const Duration(milliseconds: 300));
-
-    final roomIndex = _rooms.indexWhere((room) => room.id == roomId);
-
-    if (roomIndex == -1) {
-      throw Exception('Room not found');
+    if (!_isInitialized) {
+      await _initialize();
     }
 
-    if (_rooms[roomIndex].isAllocated) {
-      throw Exception('Room is already allocated');
+    try {
+      final room = await getRoomById(roomId);
+      if (room == null) {
+        throw Exception('Room not found');
+      }
+
+      if (room.isAllocated) {
+        throw Exception('Room is already allocated');
+      }
+
+      final success = await _mongoDBService.allocateRoom(roomId, studentName);
+      if (!success) {
+        throw Exception('Failed to allocate room');
+      }
+
+      return room.copyWith(
+        isAllocated: true,
+        allocatedTo: studentName,
+        allocationDate: DateTime.now(),
+      );
+    } catch (e) {
+      throw Exception('Failed to allocate room: $e');
     }
-
-    final updatedRoom = _rooms[roomIndex].copyWith(
-      isAllocated: true,
-      allocatedTo: studentName,
-      allocationDate: DateTime.now(),
-    );
-
-    _rooms[roomIndex] = updatedRoom;
-    return updatedRoom;
   }
 
   Future<Room> deallocateRoom(String roomId) async {
-    await Future.delayed(const Duration(milliseconds: 300));
-
-    final roomIndex = _rooms.indexWhere((room) => room.id == roomId);
-
-    if (roomIndex == -1) {
-      throw Exception('Room not found');
+    if (!_isInitialized) {
+      await _initialize();
     }
 
-    final updatedRoom = _rooms[roomIndex].copyWith(
-      isAllocated: false,
-      allocatedTo: null,
-      allocationDate: null,
-    );
+    try {
+      final room = await getRoomById(roomId);
+      if (room == null) {
+        throw Exception('Room not found');
+      }
 
-    _rooms[roomIndex] = updatedRoom;
-    return updatedRoom;
+      final success = await _mongoDBService.deallocateRoom(roomId);
+      if (!success) {
+        throw Exception('Failed to deallocate room');
+      }
+
+      return room.copyWith(
+        isAllocated: false,
+        allocatedTo: null,
+        allocationDate: null,
+      );
+    } catch (e) {
+      throw Exception('Failed to deallocate room: $e');
+    }
   }
 
   Future<bool> deleteRoom(String roomId) async {
-    await Future.delayed(const Duration(milliseconds: 300));
-
-    final roomIndex = _rooms.indexWhere((room) => room.id == roomId);
-
-    if (roomIndex == -1) {
-      return false;
+    if (!_isInitialized) {
+      await _initialize();
     }
 
-    _rooms.removeAt(roomIndex);
-    return true;
+    try {
+      return await _mongoDBService.deleteRoom(roomId);
+    } catch (e) {
+      throw Exception('Failed to delete room: $e');
+    }
   }
 
   Future<Map<String, dynamic>> getStatistics() async {
-    await Future.delayed(const Duration(milliseconds: 200));
+    if (!_isInitialized) {
+      await _initialize();
+    }
 
-    final totalRooms = _rooms.length;
-    final allocatedRooms = _rooms.where((r) => r.isAllocated).length;
-    final availableRooms = totalRooms - allocatedRooms;
-    final acRooms = _rooms.where((r) => r.hasAC).length;
-    final washroomRooms = _rooms.where((r) => r.hasAttachedWashroom).length;
-    final totalCapacity = _rooms.fold(0, (sum, room) => sum + room.capacity);
-
-    return {
-      'totalRooms': totalRooms,
-      'allocatedRooms': allocatedRooms,
-      'availableRooms': availableRooms,
-      'acRooms': acRooms,
-      'washroomRooms': washroomRooms,
-      'totalCapacity': totalCapacity,
-      'occupancyRate':
-      totalRooms > 0 ? (allocatedRooms / totalRooms * 100).toStringAsFixed(1) : '0.0',
-    };
+    try {
+      return _mongoDBService.getStatistics();
+    } catch (e) {
+      throw Exception('Failed to get statistics: $e');
+    }
   }
 }
